@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>龙华智行 - 数据融合分析看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://webapi.amap.com/maps?v=2.0&key=45109d104b3c8d03a2c84175a7749241"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        .metric-card {
+            transition: transform 0.3s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-normal { background-color: #10B981; }
+        .status-congested { background-color: #F59E0B; }
+        .status-severe { background-color: #EF4444; }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-2xl font-bold text-blue-400">龙华智行数据融合分析看板</h1>
+                    <span class="text-sm text-gray-400">实时监控 · 智能分析 · 数据驱动</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="showQRCode()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                        📱 手机端二维码
+                    </button>
+                    <div class="flex items-center">
+                        <span class="status-indicator status-normal pulse"></span>
+                        <span class="text-sm">系统正常</span>
+                    </div>
+                    <div class="text-sm text-gray-400" id="current-time"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- QR Code Modal -->
+        <div id="qr-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-white">扫码访问移动端</h3>
+                    <button onclick="hideQRCode()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="flex flex-col items-center">
+                    <div id="qr-code" class="bg-white p-4 rounded-lg mb-4"></div>
+                    <p class="text-gray-400 text-sm text-center">使用手机扫码访问</p>
+                    <p id="app-url" class="text-blue-400 text-sm text-center mt-2"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="p-6">
+            <!-- Simulation Controls -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6 mb-6">
+                <h2 class="text-xl font-bold mb-4">模拟控制</h2>
+                <div class="flex flex-wrap gap-4">
+                    <button onclick="generateRandomVehicles()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                        生成车辆（10～50）
+                    </button>
+                    <button onclick="generateScenario('congestion')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
+                        拥堵场景
+                    </button>
+                    <button onclick="generateScenario('normal')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+                        正常场景
+                    </button>
+                    <button onclick="generateScenario('emergency')" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg">
+                        紧急场景
+                    </button>
+                    <button onclick="clearVehicles()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg">
+                        清空车辆
+                    </button>
+                </div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <div class="metric-card bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">总车流量</p>
+                            <p class="text-3xl font-bold text-blue-400" id="total-vehicles">0</p>
+                        </div>
+                        <div class="text-blue-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="text-green-400 text-sm mt-2">↑ 12.5% 较上小时</p>
+                </div>
+
+                <div class="metric-card bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">平均车流密度</p>
+                            <p class="text-3xl font-bold text-yellow-400" id="avg-density">0</p>
+                        </div>
+                        <div class="text-yellow-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="text-red-400 text-sm mt-2">↑ 5.2% 较上小时</p>
+                </div>
+
+                <div class="metric-card bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">停车场占用率</p>
+                            <p class="text-3xl font-bold text-green-400" id="parking-occupancy">0%</p>
+                        </div>
+                        <div class="text-green-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="text-gray-400 text-sm mt-2">核心池: 85% | 外围池: 62%</p>
+                </div>
+
+                <div class="metric-card bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-400 text-sm">分流决策次数</p>
+                            <p class="text-3xl font-bold text-purple-400" id="diversion-count">0</p>
+                        </div>
+                        <div class="text-purple-400">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="text-green-400 text-sm mt-2">有效率: 92.5%</p>
+                </div>
+            </div>
+
+            <!-- Map and Zone Status -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <!-- Map -->
+                <div class="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <h2 class="text-xl font-bold mb-4">实时交通热力图</h2>
+                    <div id="map" class="h-96 rounded-lg"></div>
+                </div>
+
+                <!-- Zone Status -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <h2 class="text-xl font-bold mb-4">区域状态</h2>
+                    <div class="space-y-4" id="zone-status">
+                        <!-- Zone cards will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Traffic Density Trend -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <h2 class="text-xl font-bold mb-4">车流密度趋势</h2>
+                    <div class="chart-container">
+                        <canvas id="density-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Parking Pool Distribution -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                    <h2 class="text-xl font-bold mb-4">车场池分布</h2>
+                    <div class="chart-container">
+                        <canvas id="pool-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Decisions -->
+            <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                <h2 class="text-xl font-bold mb-4">最近调度决策</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-gray-700">
+                                <th class="text-left py-3 px-4 text-gray-400">时间</th>
+                                <th class="text-left py-3 px-4 text-gray-400">区域</th>
+                                <th class="text-left py-3 px-4 text-gray-400">决策类型</th>
+                                <th class="text-left py-3 px-4 text-gray-400">目标车场池</th>
+                                <th class="text-left py-3 px-4 text-gray-400">原因</th>
+                                <th class="text-left py-3 px-4 text-gray-400">置信度</th>
+                                <th class="text-left py-3 px-4 text-gray-400">效果</th>
+                            </tr>
+                        </thead>
+                        <tbody id="decisions-table">
+                            <!-- Decision rows will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script>
+        // Initialize map
+        let map;
+        let heatmapLayer;
+        let densityChart;
+        let poolChart;
+        let appURL = '';
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            initCharts();
+            updateTime();
+            setInterval(updateTime, 1000);
+            fetchData();
+            setInterval(fetchData, 30000); // Update every 30 seconds
+            loadAppURL();
+        });
+
+        // Load app URL for QR code
+        async function loadAppURL() {
+            try {
+                const response = await fetch('/api/app/url');
+                const data = await response.json();
+                appURL = data.url;
+                document.getElementById('app-url').textContent = appURL;
+            } catch (error) {
+                console.error('Error loading app URL:', error);
+                appURL = window.location.origin;
+                document.getElementById('app-url').textContent = appURL;
+            }
+        }
+
+        // Show QR code modal
+        function showQRCode() {
+            const modal = document.getElementById('qr-modal');
+            const qrCodeDiv = document.getElementById('qr-code');
+            qrCodeDiv.innerHTML = '';
+
+            if (appURL) {
+                QRCode.toCanvas(appURL, { width: 200 }, function(error, canvas) {
+                    if (error) {
+                        console.error(error);
+                        qrCodeDiv.innerHTML = '<p class="text-red-400">二维码生成失败</p>';
+                    } else {
+                        qrCodeDiv.appendChild(canvas);
+                    }
+                });
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        // Hide QR code modal
+        function hideQRCode() {
+            const modal = document.getElementById('qr-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // Generate random vehicles
+        async function generateRandomVehicles(count) {
+            try {
+                const response = await fetch('/api/simulation/vehicles/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ count: count })
+                });
+                const data = await response.json();
+                alert(`成功生成 ${data.count} 辆车`);
+                fetchData();
+            } catch (error) {
+                console.error('Error generating vehicles:', error);
+                alert('生成车辆失败');
+            }
+        }
+
+        // Generate traffic scenario
+        async function generateScenario(type) {
+            try {
+                const response = await fetch(`/api/simulation/scenario/${type}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                alert(`成功生成场景: ${data.scenario.description}`);
+                fetchData();
+            } catch (error) {
+                console.error('Error generating scenario:', error);
+                alert('生成场景失败');
+            }
+        }
+
+        // Clear all vehicles
+        async function clearVehicles() {
+            if (!confirm('确定要清空所有车辆吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/simulation/vehicles', {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                alert(data.message);
+                fetchData();
+            } catch (error) {
+                console.error('Error clearing vehicles:', error);
+                alert('清空车辆失败');
+            }
+        }
+
+        function initMap() {
+            map = new AMap.Map('map', {
+                zoom: 13,
+                center: [114.0448, 22.6913],
+                mapStyle: 'amap://styles/darkblue',
+                viewMode: '2D'
+            });
+
+            // Add zone markers
+            const zones = [
+                { id: 'zone_longhua_center', name: '龙华中心区', center: [114.0448, 22.6913], radius: 2000 },
+                { id: 'zone_longhua_north', name: '龙华北部区', center: [114.0500, 22.7100], radius: 3000 },
+                { id: 'zone_longhua_south', name: '龙华南部区', center: [114.0400, 22.6700], radius: 3000 }
+            ];
+
+            zones.forEach(zone => {
+                const circle = new AMap.Circle({
+                    center: zone.center,
+                    radius: zone.radius,
+                    strokeColor: '#3B82F6',
+                    strokeWeight: 2,
+                    strokeOpacity: 0.8,
+                    fillColor: '#3B82F6',
+                    fillOpacity: 0.3
+                });
+                map.add(circle);
+
+                const marker = new AMap.Marker({
+                    position: zone.center,
+                    title: zone.name
+                });
+                map.add(marker);
+            });
+        }
+
+        function initCharts() {
+            // Density trend chart
+            const densityCtx = document.getElementById('density-chart').getContext('2d');
+            densityChart = new Chart(densityCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: '龙华中心区',
+                            data: [],
+                            borderColor: '#3B82F6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: '龙华北部区',
+                            data: [],
+                            borderColor: '#10B981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: '龙华南部区',
+                            data: [],
+                            borderColor: '#F59E0B',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#9CA3AF' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#9CA3AF' },
+                            grid: { color: '#374151' }
+                        },
+                        y: {
+                            ticks: { color: '#9CA3AF' },
+                            grid: { color: '#374151' }
+                        }
+                    }
+                }
+            });
+
+            // Pool distribution chart
+            const poolCtx = document.getElementById('pool-chart').getContext('2d');
+            poolChart = new Chart(poolCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['核心商圈池', '外围配套池', '路边临停池'],
+                    datasets: [{
+                        data: [85, 62, 45],
+                        backgroundColor: ['#3B82F6', '#10B981', '#F59E0B'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#9CA3AF' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleString('zh-CN');
+        }
+
+        async function fetchData() {
+            try {
+                // Fetch zone status
+                const zoneResponse = await fetch('/api/traffic/zones/status');
+                const zoneData = await zoneResponse.json();
+                updateZoneStatus(zoneData);
+
+                // Fetch scheduling decisions
+                const decisionResponse = await fetch('/api/traffic/decisions/history?limit=10');
+                const decisionData = await decisionResponse.json();
+                updateDecisionsTable(decisionData);
+
+                // Update metrics (mock data for now)
+                updateMetrics();
+
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        function updateZoneStatus(zones) {
+            const container = document.getElementById('zone-status');
+            container.innerHTML = '';
+
+            Object.values(zones).forEach(zone => {
+                const statusClass = zone.status === 'normal' ? 'status-normal' : 
+                                   zone.status === 'congested' ? 'status-congested' : 'status-severe';
+                const statusText = zone.status === 'normal' ? '正常' : 
+                                  zone.status === 'congested' ? '拥堵' : '严重拥堵';
+
+                const card = document.createElement('div');
+                card.className = 'bg-gray-700 rounded-lg p-4';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-bold">${zone.name}</span>
+                        <div class="flex items-center">
+                            <span class="status-indicator ${statusClass} pulse"></span>
+                            <span class="text-sm">${statusText}</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <span class="text-gray-400">当前密度:</span>
+                            <span class="text-white">${zone.current_density.toFixed(1)}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400">峰值密度:</span>
+                            <span class="text-white">${zone.peak_hour_density.toFixed(1)}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function updateDecisionsTable(decisions) {
+            const tbody = document.getElementById('decisions-table');
+            tbody.innerHTML = '';
+
+            decisions.forEach(decision => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-gray-700';
+                row.innerHTML = `
+                    <td class="py-3 px-4">${new Date(decision.executed_at).toLocaleString('zh-CN')}</td>
+                    <td class="py-3 px-4">${decision.zone_id}</td>
+                    <td class="py-3 px-4">${decision.decision_type}</td>
+                    <td class="py-3 px-4">${decision.target_pool_level}</td>
+                    <td class="py-3 px-4">${decision.reason}</td>
+                    <td class="py-3 px-4">${(decision.confidence * 100).toFixed(0)}%</td>
+                    <td class="py-3 px-4">${decision.effectiveness > 0 ? (decision.effectiveness * 100).toFixed(0) + '%' : '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateMetrics() {
+            // Mock data - in production, fetch from API
+            document.getElementById('total-vehicles').textContent = '12,458';
+            document.getElementById('avg-density').textContent = '67.3';
+            document.getElementById('parking-occupancy').textContent = '73%';
+            document.getElementById('diversion-count').textContent = '156';
+
+            // Update density chart with mock data
+            const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
+            densityChart.data.labels = hours;
+            densityChart.data.datasets[0].data = generateMockData(24, 50, 90);
+            densityChart.data.datasets[1].data = generateMockData(24, 30, 70);
+            densityChart.data.datasets[2].data = generateMockData(24, 20, 60);
+            densityChart.update();
+        }
+
+        function generateMockData(count, min, max) {
+            return Array.from({length: count}, () => 
+                Math.floor(Math.random() * (max - min + 1)) + min
+            );
+        }
+    </script>
+</body>
+</html>

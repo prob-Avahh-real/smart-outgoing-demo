@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>PBS 园区路权调度</title>
+    <style>
+        body { margin: 0; background: #1a1a2e; font-family: sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        .status {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); color: white; padding: 15px 30px;
+            border-radius: 10px; display: flex; gap: 20px; align-items: center;
+            z-index: 100;
+        }
+        .slot { background: #e94560; padding: 5px 15px; border-radius: 15px; font-weight: bold; font-size: 20px; }
+        .controls {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px; z-index: 100;
+        }
+        button { padding: 10px 25px; border: none; border-radius: 5px; background: #e94560; color: white; cursor: pointer; }
+        button:hover { background: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="status">
+        <div>⏱️ <span id="time">0.0</span>s</div>
+        <div class="slot" id="slot">WAITING</div>
+        <div>🚗 <span id="done">0</span>/<span id="total">0</span></div>
+    </div>
+    <div class="controls">
+        <button onclick="start()">▶️ 开始</button>
+        <button onclick="pause()">⏸️ 暂停</button>
+        <button onclick="reset()">🔄 重置</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://webapi.amap.com/maps?v=2.0&key=45109d104b3c8d03a2c84175a7749241"></script>
+    <script>
+        const API = 'http://localhost:5000';
+        let map, markers = {}, lines = {}, animId, time = 0, playing = false;
+
+        async function init() {
+            const res = await fetch(`${API}/api/init`);
+            const data = await res.json();
+            
+            map = new AMap.Map('map', {
+                center: data.center, zoom: data.zoom, viewMode: '2D',
+                mapStyle: 'amap://styles/dark'
+            });
+            
+            document.getElementById('total').textContent = data.vehicles.length;
+            
+            // 路口标记
+            new AMap.Marker({
+                position: data.center, map: map,
+                content: '<div style="background:#e94560;color:white;padding:5px 10px;border-radius:50%;">🚦</div>'
+            });
+            
+            // 初始化车辆
+            data.vehicles.forEach(v => {
+                markers[v.vid] = new AMap.Marker({
+                    position: [v.x, v.y], map: map,
+                    content: `<div id="icon-${v.vid}" style="font-size:20px;">🚗</div>`,
+                    offset: new AMap.Pixel(-15, -15)
+                });
+                markers[v.vid].setLabel({content: v.vid, offset: new AMap.Pixel(15, -10)});
+                
+                lines[v.vid] = new AMap.Polyline({
+                    path: [], strokeColor: '#00d9ff', strokeWeight: 3, map: map
+                });
+            });
+        }
+
+        function getIcon(state) {
+            return {moving: '🚙', waiting: '🚗', finished: '⚪'}[state] || '🚗';
+        }
+
+        function getColor(state) {
+            return {moving: '#00d9ff', waiting: '#e94560', finished: '#666'}[state] || '#888';
+        }
+
+        async function update() {
+            const res = await fetch(`${API}/api/frame/${time}`);
+            const data = await res.json();
+            
+            document.getElementById('time').textContent = data.time.toFixed(1);
+            document.getElementById('slot').textContent = data.slot >= 0 ? `SLOT ${data.slot}` : 'WAITING';
+            document.getElementById('slot').style.background = data.slot >= 0 ? '#00d9ff' : '#e94560';
+            
+            let done = 0;
+            data.vehicles.forEach(v => {
+                markers[v.vid].setPosition([v.x, v.y]);
+                document.getElementById(`icon-${v.vid}`).textContent = getIcon(v.state);
+                
+                const oldPath = lines[v.vid].getPath() || [];
+                oldPath.push([v.x, v.y]);
+                if (oldPath.length > 30) oldPath.shift();
+                lines[v.vid].setPath(oldPath);
+                lines[v.vid].setStrokeColor(getColor(v.state));
+                
+                if (v.state === 'finished') done++;
+            });
+            document.getElementById('done').textContent = done;
+        }
+
+        async function loop() {
+            if (!playing) return;
+            await update();
+            time += 0.2;
+            if (time > 60) { time = 0; Object.values(lines).forEach(l => l.setPath([])); }
+            animId = setTimeout(loop, 100);
+        }
+
+        function start() { if (!playing) { playing = true; loop(); } }
+        function pause() { playing = false; clearTimeout(animId); }
+        function reset() { pause(); time = 0; Object.values(lines).forEach(l => l.setPath([])); update(); }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

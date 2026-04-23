@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>龙华智行 - 智能停车模拟器</title>
+  <style>
+    body { margin: 0; background: #1a1a2e; font-family: sans-serif; color: #fff; overscroll-behavior: none; }
+    #map { width: 100%; height: 100vh; }
+    .status {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.85); color: white; padding: 8px 16px;
+      border-radius: 8px; display: flex; gap: 12px; align-items: center;
+      z-index: 100; font-size: 12px; backdrop-filter: blur(10px);
+    }
+    .slot { background: #e94560; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; }
+    .controls {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; z-index: 100; flex-wrap: wrap; justify-content: center; max-width: 95%;
+    }
+    .btn {
+      padding: 10px 16px; border: none; border-radius: 6px; background: #e94560;
+      color: white; cursor: pointer; font-size: 13px; font-weight: bold;
+    }
+    .btn:hover { background: #ff6b6b; }
+    .btn.secondary { background: #334155; }
+    .btn.secondary:hover { background: #475569; }
+    .btn.success { background: #10B981; }
+    .btn.success:hover { background: #059669; }
+    .toggle-btn {
+      padding: 8px 14px; border: 2px solid #334155; border-radius: 6px;
+      background: rgba(0,0,0,0.5); color: white; cursor: pointer;
+      display: flex; align-items: center; gap: 5px; font-size: 12px;
+      transition: all 0.3s;
+    }
+    .toggle-btn:hover { background: rgba(51,65,85,0.8); border-color: #e94560; }
+    .toggle-btn.active { border-color: #e94560; background: rgba(233,69,96,0.2); }
+    .toggle-icon { font-size: 14px; }
+    .legend {
+      position: absolute; top: 60px; right: 10px; background: rgba(0,0,0,0.85);
+      padding: 10px; border-radius: 8px; z-index: 100; font-size: 11px;
+      backdrop-filter: blur(10px);
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+    .legend-color { width: 12px; height: 12px; border-radius: 50%; }
+    .vehicle-info {
+      position: absolute; bottom: 80px; left: 10px; background: rgba(0,0,0,0.85);
+      padding: 10px; border-radius: 8px; z-index: 100; font-size: 11px;
+      backdrop-filter: blur(10px); min-width: 150px;
+    }
+    .vehicle-info-row { display: flex; justify-content: space-between; margin: 3px 0; }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <div>⏱️ <span id="time">0.0</span>s</div>
+    <div class="slot" id="slot">WAITING</div>
+    <div>🚗 <span id="done">0</span>/<span id="total">0</span></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-color" style="background: #00d9ff;"></div>
+      <span>智慧行车</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #10B981;"></div>
+      <span>智能泊车</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #e94560;"></div>
+      <span>普通车辆</span>
+    </div>
+  </div>
+
+  <div class="vehicle-info">
+    <div class="vehicle-info-row">
+      <span>在线车辆:</span>
+      <span id="vehicle-count">0</span>
+    </div>
+    <div class="vehicle-info-row">
+      <span>避让中:</span>
+      <span id="avoiding-count">0</span>
+    </div>
+    <div class="vehicle-info-row">
+      <span>通信中:</span>
+      <span id="comm-count">0</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn success" onclick="start()">▶ 开始</button>
+    <button class="btn secondary" onclick="pause()">⏸ 暂停</button>
+    <button class="btn secondary" onclick="reset()">↺ 重置</button>
+    <button class="btn" onclick="generateRandomVehicles()">+ 生成车辆</button>
+    <button class="toggle-btn" id="view-toggle" onclick="toggleViewMode()">
+      <span class="toggle-icon" id="view-icon">🗺️</span>
+      <span id="view-text">2D</span>
+    </button>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    const state = {
+      config: null,
+      map: null,
+      vehicles: new Map(),
+      markers: new Map(),
+      routeLines: new Map(),
+      trailLines: new Map(),
+      destinationMarkers: new Map(),
+      commLines: new Map(),
+      sim: new Map(),
+      socket: null,
+      pollingTimer: null,
+      reconnectTimer: null,
+      adminToken: "demo_admin_token",
+      playing: false,
+      clockSec: 0,
+      timer: null,
+      viewMode: '2D',
+      parkingLots: [
+        { id: 1, name: "核心商圈池", position: [114.045, 22.692], capacity: 500, available: 156 },
+        { id: 2, name: "外围配套池", position: [114.043, 22.690], capacity: 300, available: 89 },
+        { id: 3, name: "地铁站旁", position: [114.046, 22.691], capacity: 200, available: 45 }
+      ]
+    };
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function setSync(text) {
+      console.log("Sync status:", text);
+    }
+
+    function setStatus(done, total) {
+      document.getElementById("done").textContent = String(done);
+      document.getElementById("total").textContent = String(total);
+    }
+
+    function setClockText() {
+      document.getElementById("time").textContent = state.clockSec.toFixed(1);
+    }
+
+    function updateSlot() {
+      const slotEl = document.getElementById("slot");
+      const active = Array.from(state.sim.values()).some((v) => !v.finished);
+      if (state.playing && active) {
+        slotEl.textContent = "运行中";
+        slotEl.style.background = "#00d9ff";
+      } else {
+        slotEl.textContent = "等待中";
+        slotEl.style.background = "#e94560";
+      }
+    }
+
+    function getHeaders(extra = {}) {
+      const headers = { "Content-Type": "application/json", ...extra };
+      if (state.adminToken) {
+        headers["x-admin-token"] = state.adminToken;
+      }
+      return headers;
+    }
+
+    async function request(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: getHeaders(options.headers || {})
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "请求失败");
+      }
+      return response.json();
+    }
+
+    async function loadConfigAndScript() {
+      try {
+        state.config = await request("/api/config");
+        console.log("Config loaded:", state.config);
+      } catch (error) {
+        console.error("Failed to load config:", error);
+        state.config = {
+          amap_js_key: "45109d104b3c8d03a2c84175a7749241",
+          amap_security_code: "c552677838e5f5e71de92ce532c936bc",
+          default_center: [114.0448, 22.6913]
+        };
+      }
+    }
+
+    function initMap() {
+      if (typeof AMap === 'undefined') {
+        console.error("AMap对象未定义");
+        setTimeout(initMap, 500);
+        return;
+      }
+
+      const defaultCenter = state.config.default_center || [114.0448, 22.6913];
+      
+      state.map = new AMap.Map("map", {
+        center: defaultCenter,
+        zoom: 14,
+        viewMode: '2D',
+        mapStyle: "amap://styles/dark",
+        pitch: 0,
+        rotation: 0
+      });
+
+      AMap.plugin(["AMap.Scale", "AMap.ToolBar"], () => {
+        if (state.map) {
+          state.map.addControl(new AMap.Scale());
+          state.map.addControl(new AMap.ToolBar());
+        }
+      });
+
+      // Add parking lot markers
+      state.parkingLots.forEach(lot => {
+        const marker = new AMap.Marker({
+          position: lot.position,
+          content: `<div style="font-size:24px;">🅿️</div>`,
+          offset: new AMap.Pixel(-12, -12)
+        });
+        marker.setLabel({
+          content: `${lot.name} (${lot.available}/${lot.capacity})`,
+          offset: new AMap.Pixel(15, -10)
+        });
+        marker.setMap(state.map);
+      });
+
+      console.log("Map initialized");
+    }
+
+    function toggleViewMode() {
+      state.viewMode = state.viewMode === '2D' ? '3D' : '2D';
+
+      const toggleBtn = document.getElementById('view-toggle');
+      const viewIcon = document.getElementById('view-icon');
+      const viewText = document.getElementById('view-text');
+
+      if (state.viewMode === '3D') {
+        toggleBtn.classList.add('active');
+        viewIcon.textContent = '🏢';
+        viewText.textContent = '3D';
+      } else {
+        toggleBtn.classList.remove('active');
+        viewIcon.textContent = '🗺️';
+        viewText.textContent = '2D';
+      }
+
+      if (state.map) {
+        const center = state.map.getCenter();
+        const vehicles = Array.from(state.vehicles.values());
+
+        state.map.destroy();
+        state.map = null;
+
+        const defaultCenter = state.config.default_center || [114.0448, 22.6913];
+        state.map = new AMap.Map("map", {
+          center: center || defaultCenter,
+          zoom: state.viewMode === '3D' ? 16 : 14,
+          viewMode: state.viewMode,
+          mapStyle: "amap://styles/dark",
+          pitch: state.viewMode === '3D' ? 60 : 0,
+          rotation: state.viewMode === '3D' ? 45 : 0
+        });
+
+        AMap.plugin(["AMap.Scale", "AMap.ToolBar"], () => {
+          if (state.map) {
+            state.map.addControl(new AMap.Scale());
+            state.map.addControl(new AMap.ToolBar());
+          }
+        });
+
+        if (state.viewMode === '3D' && window.AMap && AMap.Buildings) {
+          const buildings = new AMap.Buildings({
+            zooms: [16, 20],
+            zIndex: 130,
+            heightFactor: 2
+          });
+          state.map.add(buildings);
+        }
+
+        // Re-add parking lot markers
+        state.parkingLots.forEach(lot => {
+          const marker = new AMap.Marker({
+            position: lot.position,
+            content: `<div style="font-size:24px;">🅿️</div>`,
+            offset: new AMap.Pixel(-12, -12)
+          });
+          marker.setLabel({
+            content: `${lot.name} (${lot.available}/${lot.capacity})`,
+            offset: new AMap.Pixel(15, -10)
+          });
+          marker.setMap(state.map);
+        });
+
+        // Re-add vehicle markers
+        vehicles.forEach(vehicle => {
+          ensureVehicleOverlay(vehicle);
+        });
+      }
+    }
+
+    function lerp(a, b, t) {
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+
+    function progressToPosition(route, progress) {
+      if (!Array.isArray(route) || route.length === 0) {
+        return null;
+      }
+      if (route.length === 1) {
+        return route[0];
+      }
+      const maxSeg = route.length - 1;
+      const clamped = Math.max(0, Math.min(progress, maxSeg));
+      const idx = Math.floor(clamped);
+      const t = clamped - idx;
+      const from = route[idx];
+      const to = route[Math.min(idx + 1, route.length - 1)];
+      return lerp(from, to, t);
+    }
+
+    function ensureVehicleOverlay(vehicle) {
+      const id = vehicle.id;
+      const safeName = escapeHtml(vehicle.name || id);
+      const route = Array.isArray(vehicle.route) ? vehicle.route : [];
+
+      let marker = state.markers.get(id);
+      if (!marker) {
+        marker = new AMap.Marker({
+          position: vehicle.position || route[0] || state.config.default_center,
+          content: `<div style="font-size:18px;">🚗</div>`,
+          offset: new AMap.Pixel(-9, -9)
+        });
+        marker.setLabel({
+          content: safeName,
+          offset: new AMap.Pixel(12, -8)
+        });
+        marker.setMap(state.map);
+        state.markers.set(id, marker);
+      }
+
+      let routeLine = state.routeLines.get(id);
+      if (!routeLine) {
+        routeLine = new AMap.Polyline({
+          path: route,
+          strokeColor: "#00d9ff",
+          strokeWeight: 2,
+          map: state.map
+        });
+        state.routeLines.set(id, routeLine);
+      } else {
+        routeLine.setPath(route);
+      }
+
+      let trailLine = state.trailLines.get(id);
+      if (!trailLine) {
+        trailLine = new AMap.Polyline({
+          path: [],
+          strokeColor: "#e94560",
+          strokeWeight: 3,
+          lineCap: "round",
+          map: state.map
+        });
+        state.trailLines.set(id, trailLine);
+      }
+
+      let destinationMarker = state.destinationMarkers.get(id);
+      if (!destinationMarker) {
+        destinationMarker = new AMap.Marker({
+          position: vehicle.destination || route[route.length - 1] || state.config.default_center,
+          content: `<div style="font-size:16px;">🏁</div>`,
+          offset: new AMap.Pixel(-8, -8)
+        });
+        destinationMarker.setMap(state.map);
+        state.destinationMarkers.set(id, destinationMarker);
+      } else {
+        destinationMarker.setPosition(
+          vehicle.destination || route[route.length - 1] || state.config.default_center
+        );
+      }
+
+      if (!state.sim.has(id)) {
+        state.sim.set(id, {
+          progress: 0,
+          finished: false,
+          trail: [],
+          avoiding: false,
+          communicating: false
+        });
+      }
+    }
+
+    function removeMissingOverlays(validIds) {
+      for (const [id, marker] of state.markers.entries()) {
+        if (!validIds.has(id)) {
+          marker.setMap(null);
+          state.markers.delete(id);
+        }
+      }
+      for (const [id, line] of state.routeLines.entries()) {
+        if (!validIds.has(id)) {
+          line.setMap(null);
+          state.routeLines.delete(id);
+        }
+      }
+      for (const [id, line] of state.trailLines.entries()) {
+        if (!validIds.has(id)) {
+          line.setMap(null);
+          state.trailLines.delete(id);
+        }
+      }
+      for (const [id, marker] of state.destinationMarkers.entries()) {
+        if (!validIds.has(id)) {
+          marker.setMap(null);
+          state.destinationMarkers.delete(id);
+        }
+      }
+      for (const [id, line] of state.commLines.entries()) {
+        if (!validIds.has(id)) {
+          line.setMap(null);
+          state.commLines.delete(id);
+        }
+      }
+      for (const id of state.sim.keys()) {
+        if (!validIds.has(id)) {
+          state.sim.delete(id);
+        }
+      }
+    }
+
+    function applySnapshot(items) {
+      const list = Array.isArray(items) ? items : [];
+      const validIds = new Set();
+
+      list.forEach((vehicle) => {
+        validIds.add(vehicle.id);
+        state.vehicles.set(vehicle.id, vehicle);
+        ensureVehicleOverlay(vehicle);
+        if (!state.sim.has(vehicle.id)) {
+          state.sim.set(vehicle.id, {
+            progress: 0,
+            finished: false,
+            trail: [],
+            avoiding: false,
+            communicating: false
+          });
+        }
+      });
+      removeMissingOverlays(validIds);
+      setStatus(
+        Array.from(state.sim.values()).filter((v) => v.finished).length,
+        state.vehicles.size
+      );
+      updateVehicleInfo();
+    }
+
+    async function refreshVehicles() {
+      try {
+        const data = await request("/api/vehicles");
+        applySnapshot(data.items || []);
+      } catch (error) {
+        console.error("Failed to refresh vehicles:", error);
+      }
+    }
+
+    function connectWebSocket() {
+      try {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsPath = state.config.websocketPath || "/ws";
+        const wsUrl = `${protocol}//${window.location.host}${wsPath}`;
+        const socket = new WebSocket(wsUrl);
+        state.socket = socket;
+        setSync("连接中");
+
+        if (socket) {
+          socket.addEventListener("open", () => {
+            setSync("WebSocket");
+            if (state.pollingTimer) {
+              clearInterval(state.pollingTimer);
+              state.pollingTimer = null;
+            }
+          });
+
+          socket.addEventListener("message", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              if (Array.isArray(payload.items)) {
+                applySnapshot(payload.items);
+              }
+            } catch (error) {
+              console.error("WebSocket 消息解析失败", error);
+            }
+          });
+
+          socket.addEventListener("close", () => {
+            setSync("轮询兜底");
+            if (!state.pollingTimer) {
+              state.pollingTimer = setInterval(() => {
+                refreshVehicles().catch((error) => console.error("轮询失败", error));
+              }, state.config.pollingIntervalMs || 2000);
+            }
+            if (state.reconnectTimer) {
+              clearTimeout(state.reconnectTimer);
+            }
+            state.reconnectTimer = setTimeout(connectWebSocket, 2500);
+          });
+
+          socket.addEventListener("error", () => {
+            console.error("WebSocket error");
+            if (socket) {
+              socket.close();
+            }
+          });
+        }
+      } catch (error) {
+        console.error("WebSocket connection failed:", error);
+        setSync("连接失败");
+        if (!state.pollingTimer) {
+          state.pollingTimer = setInterval(() => {
+            refreshVehicles().catch((error) => console.error("轮询失败", error));
+          }, state.config.pollingIntervalMs || 2000);
+        }
+      }
+    }
+
+    function findNearestParkingLot(destination) {
+      if (!destination || !Array.isArray(destination)) {
+        return null;
+      }
+      
+      let nearest = null;
+      let minDistance = Infinity;
+      
+      state.parkingLots.forEach(lot => {
+        const distance = Math.sqrt(
+          Math.pow(destination[0] - lot.position[0], 2) +
+          Math.pow(destination[1] - lot.position[1], 2)
+        );
+        if (distance < minDistance && lot.available > 0) {
+          minDistance = distance;
+          nearest = lot;
+        }
+      });
+      
+      return nearest;
+    }
+
+    function updateVehicleInfo() {
+      document.getElementById("vehicle-count").textContent = state.vehicles.size;
+      
+      const avoidingCount = Array.from(state.sim.values()).filter(v => v.avoiding).length;
+      document.getElementById("avoiding-count").textContent = avoidingCount;
+      
+      const commCount = Array.from(state.sim.values()).filter(v => v.communicating).length;
+      document.getElementById("comm-count").textContent = commCount;
+    }
+
+    function frameStep() {
+      if (!state.playing) {
+        return;
+      }
+
+      state.clockSec += 0.1;
+      setClockText();
+
+      let done = 0;
+      const total = state.vehicles.size;
+
+      // Calculate all vehicle positions for collision avoidance
+      const vehiclePositions = new Map();
+      for (const [id, vehicle] of state.vehicles.entries()) {
+        const sim = state.sim.get(id);
+        if (sim && !sim.finished) {
+          const route = Array.isArray(vehicle.route) ? vehicle.route : [];
+          if (route.length >= 2) {
+            const pos = progressToPosition(route, sim.progress);
+            if (pos) {
+              vehiclePositions.set(id, pos);
+            }
+          }
+        }
+      }
+
+      // Clear old communication lines
+      for (const [id, line] of state.commLines.entries()) {
+        line.setMap(null);
+      }
+      state.commLines.clear();
+
+      for (const [id, vehicle] of state.vehicles.entries()) {
+        const sim = state.sim.get(id);
+        if (!sim) {
+          continue;
+        }
+        const route = Array.isArray(vehicle.route) ? vehicle.route : [];
+        if (route.length < 2) {
+          sim.finished = true;
+          done += 1;
+          continue;
+        }
+
+        if (!sim.finished) {
+          // Smart driving: adjust speed based on vehicle type
+          let speedMultiplier = 1.0;
+          sim.avoiding = false;
+          sim.communicating = false;
+
+          if (vehicle.role === "智慧行车") {
+            // Collision avoidance: check for nearby vehicles
+            const currentPos = progressToPosition(route, sim.progress);
+            if (currentPos) {
+              for (const [otherId, otherPos] of vehiclePositions.entries()) {
+                if (otherId !== id) {
+                  const distance = Math.sqrt(
+                    Math.pow(currentPos[0] - otherPos[0], 2) +
+                    Math.pow(currentPos[1] - otherPos[1], 2)
+                  );
+                  
+                  // V2V communication visualization
+                  if (distance < 0.008) {
+                    sim.communicating = true;
+                    const commLine = new AMap.Polyline({
+                      path: [currentPos, otherPos],
+                      strokeColor: "#FFD700",
+                      strokeWeight: 1,
+                      strokeOpacity: 0.5,
+                      strokeStyle: "dashed",
+                      map: state.map
+                    });
+                    state.commLines.set(`${id}-${otherId}`, commLine);
+                  }
+                  
+                  // Speed adjustment for collision avoidance
+                  if (distance < 0.003) {
+                    speedMultiplier = 0.3;
+                    sim.avoiding = true;
+                    break;
+                  } else if (distance < 0.005) {
+                    speedMultiplier = 0.6;
+                    sim.avoiding = true;
+                  }
+                }
+              }
+            }
+          } else if (vehicle.role === "智能泊车") {
+            // Smart parking: slow down when approaching destination
+            const progressRatio = sim.progress / (route.length - 1);
+            if (progressRatio > 0.7) {
+              speedMultiplier = 0.5;
+            } else if (progressRatio > 0.5) {
+              speedMultiplier = 0.7;
+            }
+          }
+
+          sim.progress += 0.08 * speedMultiplier;
+          if (sim.progress >= route.length - 1) {
+            sim.progress = route.length - 1;
+            sim.finished = true;
+          }
+        }
+
+        const pos = progressToPosition(route, sim.progress);
+        if (pos) {
+          const marker = state.markers.get(id);
+          if (marker) {
+            marker.setPosition(pos);
+            let icon = "🚙";
+            if (vehicle.role === "智慧行车") {
+              icon = "🚗";
+            } else if (vehicle.role === "智能泊车") {
+              icon = "🅿️";
+            }
+            marker.setContent(
+              `<div style="font-size:18px;">${sim.finished ? "⚪" : icon}</div>`
+            );
+          }
+
+          sim.trail.push(pos);
+          if (sim.trail.length > 60) {
+            sim.trail.shift();
+          }
+          const trailLine = state.trailLines.get(id);
+          if (trailLine) {
+            trailLine.setPath(sim.trail);
+            let trailColor = "#e94560";
+            if (vehicle.role === "智慧行车") {
+              trailColor = "#00d9ff";
+            } else if (vehicle.role === "智能泊车") {
+              trailColor = "#10B981";
+            }
+            trailLine.setStrokeColor(sim.finished ? "#666666" : trailColor);
+          }
+        }
+
+        if (sim.finished) {
+          done += 1;
+        }
+      }
+
+      setStatus(done, total);
+      updateSlot();
+      updateVehicleInfo();
+      state.timer = setTimeout(frameStep, 100);
+    }
+
+    window.start = function start() {
+      if (!state.playing) {
+        state.playing = true;
+        updateSlot();
+        frameStep();
+      }
+    };
+
+    window.pause = function pause() {
+      state.playing = false;
+      if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+      }
+      updateSlot();
+    };
+
+    window.reset = function reset() {
+      window.pause();
+      state.clockSec = 0;
+      setClockText();
+      for (const [id, sim] of state.sim.entries()) {
+        sim.progress = 0;
+        sim.finished = false;
+        sim.trail = [];
+        sim.avoiding = false;
+        sim.communicating = false;
+        const trailLine = state.trailLines.get(id);
+        if (trailLine) {
+          trailLine.setPath([]);
+        }
+        const marker = state.markers.get(id);
+        const vehicle = state.vehicles.get(id);
+        if (marker && vehicle) {
+          marker.setPosition(
+            vehicle.position || (Array.isArray(vehicle.route) ? vehicle.route[0] : state.config.default_center)
+          );
+          marker.setContent('<div style="font-size:18px;">🚗</div>');
+        }
+      }
+      setStatus(0, state.vehicles.size);
+      updateSlot();
+      updateVehicleInfo();
+    };
+
+    async function generateRandomVehicles() {
+      const count = Math.floor(Math.random() * 11) + 5; // 5-15 vehicles for mobile
+      const defaultCenter = state.config.default_center;
+      const minDistance = 0.003;
+      const existingPositions = new Set();
+      let successCount = 0;
+      const maxAttempts = count * 10;
+
+      while (successCount < count && existingPositions.size < maxAttempts) {
+        const startLng = defaultCenter[0] + (Math.random() - 0.5) * 0.015;
+        const startLat = defaultCenter[1] + (Math.random() - 0.5) * 0.015;
+
+        let overlaps = false;
+        for (const pos of existingPositions) {
+          const [lng, lat] = pos.split(',').map(Number);
+          const distance = Math.sqrt(Math.pow(startLng - lng, 2) + Math.pow(startLat - lat, 2));
+          if (distance < minDistance) {
+            overlaps = true;
+            break;
+          }
+        }
+
+        if (overlaps) continue;
+
+        const endLng = startLng + (Math.random() - 0.5) * 0.02;
+        const endLat = startLat + (Math.random() - 0.5) * 0.02;
+
+        // Find nearest parking lot for destination
+        const nearestParking = findNearestParkingLot([endLng, endLat]);
+        const finalDestination = nearestParking ? nearestParking.position : [endLng, endLat];
+
+        existingPositions.add(`${startLng},${startLat}`);
+
+        const vehicleData = {
+          name: `智能车辆-${String(successCount + 1).padStart(2, '0')}`,
+          role: successCount % 3 === 0 ? "智慧行车" : "智能泊车",
+          start: [startLng, startLat],
+          destination: finalDestination
+        };
+
+        try {
+          await request("/api/vehicles", {
+            method: "POST",
+            body: JSON.stringify(vehicleData)
+          });
+          successCount++;
+        } catch (error) {
+          console.error("Failed to create vehicle:", error);
+          existingPositions.delete(`${startLng},${startLat}`);
+        }
+      }
+
+      await refreshVehicles();
+      alert(`成功生成 ${successCount} 辆车`);
+    }
+
+    async function bootstrap() {
+      console.log("Bootstrap started");
+      await loadConfigAndScript();
+      
+      if (state.config.amap_security_code) {
+        window._AMapSecurityConfig = { securityJsCode: state.config.amap_security_code };
+      }
+
+      const script = document.createElement("script");
+      script.src = `https://webapi.amap.com/maps?v=2.0&key=${state.config.amap_js_key}`;
+      script.onload = () => {
+        setTimeout(() => {
+          if (typeof AMap !== 'undefined') {
+            initMap();
+            refreshVehicles();
+            connectWebSocket();
+            setClockText();
+            updateSlot();
+          }
+        }, 500);
+      };
+      script.onerror = () => {
+        console.error("Failed to load AMap script");
+      };
+      document.head.appendChild(script);
+    }
+
+    window.onload = function() {
+      console.log('Page loaded, starting bootstrap...');
+      bootstrap().catch((error) => {
+        console.error(error);
+        alert(`初始化失败：${error.message}`);
+      });
+    };
+  </script>
+</body>
+</html>

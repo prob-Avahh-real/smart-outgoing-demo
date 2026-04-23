@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AMap API Test</title>
+    <meta charset="utf-8">
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        #map { height: 400px; width: 100%; margin: 20px 0; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>AMap API 2.0 Test</h1>
+    <div id="status">Loading...</div>
+    <div id="map"></div>
+    
+    <script>
+        // Test configuration
+        const AMAP_JS_KEY = "45109d104b3c8d03a2c84175a7749241"; // Replace with your key
+        const AMAP_SECURITY_CODE = "c552677838e5f5e71de92ce532c936bc"; // Replace with your code
+        
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = isError ? 'status error' : 'status success';
+            statusDiv.textContent = message;
+        }
+        
+        function testAMapAPI() {
+            // Check if keys are placeholders
+            if (AMAP_JS_KEY === "45109d104b3c8d03a2c84175a7749241" || AMAP_SECURITY_CODE === "c552677838e5f5e71de92ce532c936bc") {
+                updateStatus("Please replace placeholder keys with your actual AMap API keys", true);
+                return;
+            }
+            
+            updateStatus("Testing AMap API connection...");
+            
+            // Set security configuration
+            window._AMapSecurityConfig = { 
+                securityJsCode: AMAP_SECURITY_CODE 
+            };
+            
+            // Load AMap script
+            const script = document.createElement('script');
+            script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_JS_KEY}`;
+            script.onload = function() {
+                try {
+                    // Initialize map
+                    const map = new AMap.Map('map', {
+                        center: [114.0448, 22.6913], // Shenzhen
+                        zoom: 12,
+                        viewMode: '2D'
+                    });
+                    
+                    // Add controls
+                    map.addControl(new AMap.Scale());
+                    map.addControl(new AMap.ToolBar());
+                    
+                    updateStatus("AMap API loaded successfully! Map is working.");
+                    
+                    // Test 3D mode
+                    setTimeout(() => {
+                        map.setViewMode('3D');
+                        map.setPitch(45);
+                        updateStatus("3D mode test successful!");
+                    }, 2000);
+                    
+                } catch (error) {
+                    updateStatus(`Map initialization failed: ${error.message}`, true);
+                }
+            };
+            
+            script.onerror = function() {
+                updateStatus("Failed to load AMap script. Check your API key and network connection.", true);
+            };
+            
+            document.head.appendChild(script);
+        }
+        
+        // Start test
+        testAMapAPI();
+    </script>
+</body>
+</html>

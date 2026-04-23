@@ -1,0 +1,44 @@
+2026/04/20 22:43:08 Starting DDD service...
+2026/04/20 22:43:08 Starting scaling orchestrator...
+2026/04/20 22:43:08 Scaling orchestrator started successfully
+2026/04/20 22:43:08 DDD service started successfully
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /api/config               --> main.main.GetConfig.func6 (4 handlers)
+[GIN-debug] PUT    /api/config               --> main.main.UpdateConfig.func7 (4 handlers)
+[GIN-debug] GET    /api/vehicles             --> main.main.GetVehicles.func8 (4 handlers)
+[GIN-debug] POST   /api/vehicles             --> main.main.CreateVehicle.func9 (4 handlers)
+[GIN-debug] POST   /api/vehicles/import      --> main.main.ImportVehiclesFromCSV.func10 (4 handlers)
+[GIN-debug] PUT    /api/vehicles/:id/destination --> main.main.SetDestination.func11 (4 handlers)
+[GIN-debug] DELETE /api/vehicles/:id         --> main.main.DeleteVehicle.func12 (4 handlers)
+[GIN-debug] POST   /api/algorithm/plan       --> main.main.PlanRoute.func13 (4 handlers)
+[GIN-debug] POST   /api/algorithm/schedule   --> main.main.ScheduleTasks.func14 (4 handlers)
+[GIN-debug] GET    /api/cache/stats          --> main.main.GetCacheStats.func15 (4 handlers)
+[GIN-debug] POST   /api/cache/cleanup        --> main.main.CleanupCache.func16 (4 handlers)
+[GIN-debug] POST   /api/simulation/run       --> main.main.RunSimulation.func17 (4 handlers)
+[GIN-debug] GET    /api/simulation/status    --> main.main.GetSimulationStatus.func18 (4 handlers)
+[GIN-debug] POST   /api/simulation/batch     --> main.main.StartSimulationBatch.func19 (4 handlers)
+[GIN-debug] POST   /api/simulation/stop      --> main.main.StopSimulation.func20 (4 handlers)
+[GIN-debug] GET    /api/simulation/results   --> main.main.GetSimulationResults.func21 (4 handlers)
+[GIN-debug] GET    /ws                       --> main.main.func2 (4 handlers)
+[GIN-debug] GET    /                         --> main.main.func3 (4 handlers)
+[GIN-debug] GET    /amap                     --> main.main.func4 (4 handlers)
+[GIN-debug] GET    /public/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /public/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] GET    /css/*filepath            --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /css/*filepath            --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] GET    /js/*filepath             --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /js/*filepath             --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] GET    /html/*filepath           --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /html/*filepath           --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+2026/04/20 22:43:08 Server starting on port 8080
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+[GIN] 2026/04/20 - 22:43:13 | 200 |   1.45ms |             ::1 | GET      "/api/config"
+[GIN] 2026/04/20 - 22:43:13 | 200 |   1.22ms |             ::1 | GET      "/api/vehicles"
+[GIN] 2026/04/20 - 22:43:13 | 200 | 42.125µs |             ::1 | GET      "/api/simulation/status"

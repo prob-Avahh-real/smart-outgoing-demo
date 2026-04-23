@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment & Booking - AI Car Parking</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .payment-method {
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .payment-method:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .payment-method.selected {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            border: 2px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .payment-success {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .payment-failed {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <h1 class="text-xl font-bold text-gray-900">Payment & Booking</h1>
+                    <span class="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Secure</span>
+                </div>
+                <nav class="flex space-x-4">
+                    <button onclick="goToParking()" class="text-gray-600 hover:text-gray-900">Parking</button>
+                    <button onclick="goToReservations()" class="text-gray-600 hover:text-gray-900">My Reservations</button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Payment Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-lg font-semibold mb-4">Complete Payment</h2>
+                
+                <!-- Reservation Summary -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <h3 class="font-medium text-blue-900 mb-2">Reservation Summary</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Parking Lot:</span>
+                            <span class="font-medium" id="parking-lot-name">CBD Central Parking</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Space:</span>
+                            <span class="font-medium" id="space-number">A-001</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Duration:</span>
+                            <span class="font-medium" id="duration">2 hours</span>
+                        </div>
+                        <div class="flex justify-between text-lg font-bold text-blue-900">
+                            <span>Total Amount:</span>
+                            <span id="total-amount">¥30.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Methods -->
+                <div class="mb-6">
+                    <h3 class="font-medium text-gray-900 mb-4">Select Payment Method</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="payment-method cursor-pointer p-4 border rounded-lg" onclick="selectPaymentMethod('wechat')">
+                            <div class="flex items-center space-x-3">
+                                <i class="fab fa-weixin text-green-600 text-2xl"></i>
+                                <div>
+                                    <div class="font-medium">WeChat Pay</div>
+                                    <div class="text-sm text-gray-500">Fast & secure</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="payment-method cursor-pointer p-4 border rounded-lg" onclick="selectPaymentMethod('alipay')">
+                            <div class="flex items-center space-x-3">
+                                <i class="fab fa-alipay text-blue-600 text-2xl"></i>
+                                <div>
+                                    <div class="font-medium">Alipay</div>
+                                    <div class="text-sm text-gray-500">Trusted payment</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="payment-method cursor-pointer p-4 border rounded-lg" onclick="selectPaymentMethod('credit_card')">
+                            <div class="flex items-center space-x-3">
+                                <i class="fas fa-credit-card text-purple-600 text-2xl"></i>
+                                <div>
+                                    <div class="font-medium">Credit Card</div>
+                                    <div class="text-sm text-gray-500">Visa, Mastercard, etc.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Form -->
+                <div id="payment-form" class="hidden">
+                    <!-- WeChat Pay Form -->
+                    <div id="wechat-form" class="space-y-4">
+                        <div class="text-center">
+                            <p class="text-gray-600 mb-4">Scan QR code with WeChat to complete payment</p>
+                            <div class="qr-code mx-auto">
+                                <div id="wechat-qr-code">
+                                    <i class="fas fa-qrcode text-6xl text-gray-400"></i>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-2">QR code expires in 10 minutes</p>
+                        </div>
+                    </div>
+
+                    <!-- Alipay Form -->
+                    <div id="alipay-form" class="space-y-4">
+                        <div class="text-center">
+                            <p class="text-gray-600 mb-4">Click to complete payment with Alipay</p>
+                            <button onclick="processAlipayPayment()" class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                <i class="fab fa-alipay mr-2"></i>
+                                Pay with Alipay
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Credit Card Form -->
+                    <div id="credit-card-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Card Number</label>
+                            <input type="text" id="card-number" placeholder="1234 5678 9012 3456" 
+                                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Expiry Date</label>
+                                <input type="text" id="card-expiry" placeholder="MM/YY" 
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">CVV</label>
+                                <input type="text" id="card-cvv" placeholder="123" 
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Cardholder Name</label>
+                            <input type="text" id="card-holder" placeholder="John Doe" 
+                                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <button onclick="processCreditCardPayment()" class="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                            <i class="fas fa-lock mr-2"></i>
+                            Secure Payment
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Payment Status -->
+                <div id="payment-status" class="hidden">
+                    <div class="text-center">
+                        <div id="loading-spinner" class="loading-spinner mx-auto mb-4"></div>
+                        <div id="payment-result" class="p-4 rounded-lg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment History Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-lg font-semibold mb-4">Payment History</h2>
+                
+                <!-- Payment Stats -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Total Payments</div>
+                        <div class="text-xl font-bold text-gray-900" id="total-payments">15</div>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Successful</div>
+                        <div class="text-xl font-bold text-green-600" id="successful-payments">12</div>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Failed</div>
+                        <div class="text-xl font-bold text-red-600" id="failed-payments">2</div>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600">Total Amount</div>
+                        <div class="text-xl font-bold text-blue-600" id="total-amount-history">¥675.50</div>
+                    </div>
+                </div>
+
+                <!-- Recent Payments -->
+                <div>
+                    <h3 class="font-medium text-gray-900 mb-4">Recent Transactions</h3>
+                    <div id="payment-history" class="space-y-3">
+                        <!-- Payment history will be loaded here -->
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-spinner fa-spin text-2xl"></i>
+                            <p class="mt-2">Loading payment history...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Refund Section -->
+                <div class="mt-6 pt-6 border-t">
+                    <h3 class="font-medium text-gray-900 mb-4">Need a Refund?</h3>
+                    <div class="flex space-x-4">
+                        <input type="text" id="refund-payment-id" placeholder="Payment ID" 
+                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <input type="number" id="refund-amount" placeholder="Refund Amount" 
+                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <button onclick="processRefund()" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                            <i class="fas fa-undo mr-2"></i>
+                            Process Refund
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/3 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                    <i class="fas fa-check text-green-600 text-2xl"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">Payment Successful!</h3>
+                <div class="mt-2 px-7 py-3 bg-green-100 rounded-md">
+                    <p class="text-sm text-green-800">Your parking reservation has been confirmed.</p>
+                    <p class="text-sm text-green-800 mt-1">Reservation ID: <span id="success-reservation-id"></span></p>
+                </div>
+                <div class="mt-4 flex space-x-3">
+                    <button onclick="closeSuccessModal()" class="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                        Close
+                    </button>
+                    <button onclick="goToReservations()" class="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                        View Reservations
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let selectedPaymentMethod = null;
+        let currentReservation = null;
+
+        // Initialize page
+        window.onload = function() {
+            loadPaymentHistory();
+            loadPaymentStats();
+            loadReservationDetails();
+        };
+
+        // Load reservation details from URL parameters or mock data
+        function loadReservationDetails() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const reservationId = urlParams.get('reservation_id');
+            
+            if (reservationId) {
+                // Load actual reservation details
+                loadReservation(reservationId);
+            } else {
+                // Use mock data for demo
+                document.getElementById('parking-lot-name').textContent = 'CBD Central Parking';
+                document.getElementById('space-number').textContent = 'A-001';
+                document.getElementById('duration').textContent = '2 hours';
+                document.getElementById('total-amount').textContent = '¥30.00';
+            }
+        }
+
+        // Select payment method
+        function selectPaymentMethod(method) {
+            // Remove previous selection
+            document.querySelectorAll('.payment-method').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            // Add selection to clicked method
+            event.currentTarget.classList.add('selected');
+            selectedPaymentMethod = method;
+            
+            // Hide all payment forms
+            document.getElementById('wechat-form').classList.add('hidden');
+            document.getElementById('alipay-form').classList.add('hidden');
+            document.getElementById('credit-card-form').classList.add('hidden');
+            
+            // Show selected payment form
+            document.getElementById('payment-form').classList.remove('hidden');
+            document.getElementById(`${method}-form`).classList.remove('hidden');
+        }
+
+        // Process WeChat Pay payment
+        function processWeChatPayment() {
+            showPaymentStatus('processing');
+            
+            const paymentData = {
+                reservation_id: 'res_123',
+                amount: 30.0,
+                currency: 'CNY',
+                method: 'wechat',
+                payment_info: { open_id: 'demo_user' }
+            };
+
+            fetch('/api/payment/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(paymentData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.payment_url) {
+                    // Show QR code for redirect
+                    document.getElementById('wechat-qr-code').innerHTML = `<img src="${data.qr_code}" alt="WeChat Pay QR Code" style="width: 200px; height: 200px;">`;
+                    showPaymentStatus('qr-code');
+                } else if (data.status === 'completed') {
+                    showPaymentSuccess(data.payment_id);
+                } else {
+                    showPaymentError('Payment failed. Please try again.');
+                }
+            })
+            .catch(error => {
+                showPaymentError('Payment processing error: ' + error.message);
+            });
+        }
+
+        // Process Alipay payment
+        function processAlipayPayment() {
+            showPaymentStatus('processing');
+            
+            const paymentData = {
+                reservation_id: 'res_123',
+                amount: 30.0,
+                currency: 'CNY',
+                method: 'alipay',
+                payment_info: { alipay_user_id: 'demo_user' }
+            };
+
+            fetch('/api/payment/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(paymentData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.payment_url) {
+                    // Redirect to Alipay
+                    window.open(data.payment_url, '_blank');
+                    showPaymentStatus('redirect');
+                } else if (data.status === 'completed') {
+                    showPaymentSuccess(data.payment_id);
+                } else {
+                    showPaymentError('Payment failed. Please try again.');
+                }
+            })
+            .catch(error => {
+                showPaymentError('Payment processing error: ' + error.message);
+            });
+        }
+
+        // Process credit card payment
+        function processCreditCardPayment() {
+            const cardNumber = document.getElementById('card-number').value;
+            const cardExpiry = document.getElementById('card-expiry').value;
+            const cardCVV = document.getElementById('card-cvv').value;
+            const cardHolder = document.getElementById('card-holder').value;
+
+            // Basic validation
+            if (!cardNumber || !cardExpiry || !cardCVV || !cardHolder) {
+                alert('Please fill in all card details');
+                return;
+            }
+
+            showPaymentStatus('processing');
+            
+            const paymentData = {
+                reservation_id: 'res_123',
+                amount: 30.0,
+                currency: 'CNY',
+                method: 'credit_card',
+                payment_info: {
+                    card_number: cardNumber,
+                    card_holder_name: cardHolder,
+                    expiry_month: cardExpiry.split('/')[0],
+                    expiry_year: '20' + cardExpiry.split('/')[1],
+                    cvv: cardCVV
+                }
+            };
+
+            fetch('/api/payment/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(paymentData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    showPaymentSuccess(data.payment_id);
+                } else {
+                    showPaymentError('Payment failed. Please check your card details.');
+                }
+            })
+            .catch(error => {
+                showPaymentError('Payment processing error: ' + error.message);
+            });
+        }
+
+        // Process refund
+        function processRefund() {
+            const paymentId = document.getElementById('refund-payment-id').value;
+            const refundAmount = parseFloat(document.getElementById('refund-amount').value);
+
+            if (!paymentId || !refundAmount || refundAmount <= 0) {
+                alert('Please enter valid payment ID and refund amount');
+                return;
+            }
+
+            const refundData = {
+                payment_id: paymentId,
+                amount: refundAmount,
+                reason: 'User requested refund'
+            };
+
+            fetch('/api/payment/refund', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(refundData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    alert(`Refund processed successfully! Refund ID: ${data.refund_id}`);
+                    document.getElementById('refund-payment-id').value = '';
+                    document.getElementById('refund-amount').value = '';
+                    loadPaymentHistory(); // Refresh payment history
+                } else {
+                    alert('Refund failed: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Refund processing error: ' + error.message);
+            });
+        }
+
+        // Show payment status
+        function showPaymentStatus(status) {
+            document.getElementById('payment-form').classList.add('hidden');
+            document.getElementById('payment-status').classList.remove('hidden');
+            
+            const statusDiv = document.getElementById('payment-result');
+            const spinner = document.getElementById('loading-spinner');
+            
+            if (status === 'processing') {
+                spinner.classList.remove('hidden');
+                statusDiv.className = 'p-4 rounded-lg bg-blue-100 text-blue-800';
+                statusDiv.innerHTML = '<i class="fas fa-clock mr-2"></i>Processing payment...';
+            } else if (status === 'qr-code') {
+                spinner.classList.add('hidden');
+                statusDiv.className = 'p-4 rounded-lg bg-blue-100 text-blue-800';
+                statusDiv.innerHTML = '<i class="fas fa-qrcode mr-2"></i>Please scan QR code to complete payment';
+            } else if (status === 'redirect') {
+                spinner.classList.add('hidden');
+                statusDiv.className = 'p-4 rounded-lg bg-blue-100 text-blue-800';
+                statusDiv.innerHTML = '<i class="fas fa-external-link-alt mr-2"></i>Complete payment on the opened page';
+            }
+        }
+
+        // Show payment success
+        function showPaymentSuccess(paymentId) {
+            const statusDiv = document.getElementById('payment-result');
+            document.getElementById('loading-spinner').classList.add('hidden');
+            
+            statusDiv.className = 'payment-success p-4 rounded-lg';
+            statusDiv.innerHTML = `
+                <i class="fas fa-check-circle text-3xl mb-2"></i>
+                <h4 class="text-lg font-medium">Payment Successful!</h4>
+                <p class="mt-2">Payment ID: ${paymentId}</p>
+                <p>Your parking reservation is confirmed.</p>
+            `;
+            
+            // Show success modal after 2 seconds
+            setTimeout(() => {
+                document.getElementById('success-reservation-id').textContent = paymentId;
+                document.getElementById('success-modal').classList.remove('hidden');
+            }, 2000);
+        }
+
+        // Show payment error
+        function showPaymentError(message) {
+            const statusDiv = document.getElementById('payment-result');
+            document.getElementById('loading-spinner').classList.add('hidden');
+            
+            statusDiv.className = 'payment-failed p-4 rounded-lg';
+            statusDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
+                <h4 class="text-lg font-medium">Payment Failed</h4>
+                <p class="mt-2">${message}</p>
+                <button onclick="resetPayment()" class="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                    Try Again
+                </button>
+            `;
+        }
+
+        // Reset payment form
+        function resetPayment() {
+            document.getElementById('payment-status').classList.add('hidden');
+            document.getElementById('payment-form').classList.remove('hidden');
+            document.querySelectorAll('.payment-method').forEach(el => {
+                el.classList.remove('selected');
+            });
+            selectedPaymentMethod = null;
+        }
+
+        // Load payment history
+        function loadPaymentHistory() {
+            fetch('/api/payment/user/payments')
+            .then(response => response.json())
+            .then(data => {
+                const historyDiv = document.getElementById('payment-history');
+                
+                if (data.payments && data.payments.length > 0) {
+                    historyDiv.innerHTML = data.payments.map(payment => `
+                        <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                            <div>
+                                <div class="font-medium">${getPaymentMethodName(payment.method)}</div>
+                                <div class="text-sm text-gray-500">${formatDate(payment.created_at)}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-medium">¥${payment.amount}</div>
+                                <div class="text-sm ${getPaymentStatusColor(payment.status)}">${getPaymentStatusText(payment.status)}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    historyDiv.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-receipt text-4xl mb-2"></i>
+                            <p>No payment history found</p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error loading payment history:', error);
+                document.getElementById('payment-history').innerHTML = '<p class="text-red-600">Error loading payment history</p>';
+            });
+        }
+
+        // Load payment statistics
+        function loadPaymentStats() {
+            fetch('/api/payment/stats')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('total-payments').textContent = data.total_payments;
+                document.getElementById('successful-payments').textContent = data.successful_payments;
+                document.getElementById('failed-payments').textContent = data.failed_payments;
+                document.getElementById('total-amount-history').textContent = `¥${data.total_amount}`;
+            })
+            .catch(error => {
+                console.error('Error loading payment stats:', error);
+            });
+        }
+
+        // Helper functions
+        function getPaymentMethodName(method) {
+            const methods = {
+                'wechat': 'WeChat Pay',
+                'alipay': 'Alipay',
+                'credit_card': 'Credit Card'
+            };
+            return methods[method] || method;
+        }
+
+        function getPaymentStatusText(status) {
+            const statusTexts = {
+                'pending': 'Pending',
+                'processing': 'Processing',
+                'completed': 'Completed',
+                'failed': 'Failed',
+                'refunded': 'Refunded'
+            };
+            return statusTexts[status] || status;
+        }
+
+        function getPaymentStatusColor(status) {
+            const colors = {
+                'pending': 'text-yellow-600',
+                'processing': 'text-blue-600',
+                'completed': 'text-green-600',
+                'failed': 'text-red-600',
+                'refunded': 'text-gray-600'
+            };
+            return colors[status] || 'text-gray-600';
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('zh-CN', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Navigation functions
+        function goToParking() {
+            window.location.href = '/parking';
+        }
+
+        function goToReservations() {
+            alert('Reservations page coming soon!');
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('success-modal').classList.add('hidden');
+        }
+
+        // Auto-select WeChat Pay for demo
+        setTimeout(() => {
+            selectPaymentMethod('wechat');
+        }, 1000);
+    </script>
+</body>
+</html>
