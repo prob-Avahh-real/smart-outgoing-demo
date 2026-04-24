@@ -71,6 +71,53 @@ internal/domain/
 - **Cost Calculation**: Real-time cost tracking
 - **Session History**: Past parking records
 
+### 5. Underground Automated Valet Parking (AVP)
+- **Drop-off & Summon**: Driver exits at a designated zone, vehicle parks autonomously and can be summoned back
+- **Vehicle-Infrastructure Collaboration**: Combines on-vehicle low-speed autonomy with parking-lot-side scheduling and sensing
+- **Cross-level Routing**: Supports ramp traversal, lane-level path planning, and dynamic rerouting
+- **Safety-First Design**: Conservative yielding logic for pedestrians, emergency-stop capability, and minimum risk stop strategy
+- **Operational Readiness**: Includes dispatch policies, telemetry, replay, alerting, and staged rollout support
+
+#### AVP Scope (Current Project Integration)
+- **Phase 1 (Documentation + API contract)**: Define AVP workflow and interfaces for simulation
+- **Phase 2 (Demo orchestration)**: Add backend orchestration endpoints and mock state transitions
+- **Phase 3 (Production integration)**: Connect to real parking infrastructure, edge compute, and remote operations
+
+#### AVP Functional Flow
+1. User selects **Auto Park** in app/vehicle UI at drop-off zone
+2. System validates vehicle status and available AVP area
+3. Dispatch service allocates target slot and sends route task
+4. Vehicle executes low-speed navigation with continuous obstacle checks
+5. On successful parking, session status switches to `parked_by_avp`
+6. User can trigger **Summon**, dispatching reverse route back to pickup zone
+
+#### AVP Service Boundaries (DDD Mapping)
+- **Entity extension candidates**
+  - `ParkingSession`: add AVP mode, status transitions, safety events
+  - `ParkingRoute`: add lane graph metadata and cross-floor waypoints
+  - `ParkingSpace`: add AVP compatibility flags (width, pillar risk, charger proximity)
+- **Domain service extension candidates**
+  - New service: `avp_dispatch_service.go` for task assignment and conflict resolution
+  - Existing recommendation service: include AVP-eligible score dimensions
+- **Repository extension candidates**
+  - AVP task repository for mission lifecycle and telemetry snapshots
+  - Infrastructure capability repository for zone/ramp/closure status
+
+#### AVP API Draft (for next implementation phase)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/parking/avp/start` | Start AVP parking task from drop-off zone |
+| POST | `/api/parking/avp/summon` | Summon vehicle to designated pickup zone |
+| GET | `/api/parking/avp/tasks/:id` | Query AVP task state and latest progress |
+| POST | `/api/parking/avp/tasks/:id/cancel` | Cancel AVP task and trigger safe stop |
+
+#### AVP Key Metrics
+- AVP parking success rate
+- Average drop-off to parked duration
+- Summon wait time
+- Human intervention rate
+- Safety incident count (target: zero collision)
+
 ## User Interface
 
 ### Web Application (`/parking`)

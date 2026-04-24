@@ -1,6 +1,6 @@
 # Makefile for Smart Outgoing Demo
 
-.PHONY: help build run test lint clean fmt docker-build docker-run dev setup
+.PHONY: help build run test test-parking test-avp lint clean fmt docker-build docker-run dev setup
 
 # Default target
 help:
@@ -10,6 +10,8 @@ help:
 	@echo "  run        - Run the application"
 	@echo "  dev        - Run in development mode with hot reload"
 	@echo "  test       - Run all tests"
+	@echo "  test-parking - Run parking API smoke tests"
+	@echo "  test-avp   - Run AVP API smoke tests"
 	@echo "  test-cover - Run tests with coverage"
 	@echo "  lint       - Run linter"
 	@echo "  fmt        - Format code"
@@ -53,6 +55,16 @@ dev:
 test:
 	@echo "Running tests..."
 	go test -v ./...
+
+# Run AVP API smoke tests
+test-parking:
+	@echo "Running parking API smoke tests..."
+	./scripts/test_parking_apis.sh
+
+# Run AVP API smoke tests
+test-avp:
+	@echo "Running AVP API smoke tests..."
+	./scripts/test_avp_apis.sh
 
 # Run tests with coverage
 test-cover:

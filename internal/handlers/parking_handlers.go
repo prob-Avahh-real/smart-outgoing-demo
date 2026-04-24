@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +19,8 @@ type ParkingHandler struct {
 	recommendationService *services.ParkingRecommendationService
 	config                *config.Config
 	poolService           *services.ParkingPoolService
+	avpService            *services.AVPDispatchService
+	mockService           *services.ParkingMockService
 }
 
 // NewParkingHandler creates a new parking handler
@@ -31,7 +32,24 @@ func NewParkingHandler(
 		recommendationService: recommendationService,
 		config:                cfg,
 		poolService:           services.NewParkingPoolService(),
+		avpService:            services.NewAVPDispatchService(),
+		mockService:           services.NewParkingMockService(),
 	}
+}
+
+// StartAVPRequest represents AVP auto-park task start payload.
+type StartAVPRequest struct {
+	VehicleID     string `json:"vehicle_id" binding:"required"`
+	ParkingLotID  string `json:"parking_lot_id" binding:"required"`
+	DropoffZone   string `json:"dropoff_zone" binding:"required"`
+	TargetSpaceID string `json:"target_space_id,omitempty"`
+}
+
+// SummonAVPRequest represents AVP summon task payload.
+type SummonAVPRequest struct {
+	VehicleID    string `json:"vehicle_id" binding:"required"`
+	ParkingLotID string `json:"parking_lot_id" binding:"required"`
+	PickupZone   string `json:"pickup_zone" binding:"required"`
 }
 
 // FindParkingRequest represents a parking search request
@@ -53,7 +71,7 @@ func (h *ParkingHandler) FindParking(c *gin.Context) {
 
 	// If recommendation service is not available, return mock data
 	if h.recommendationService == nil {
-		mockRecommendations := generateMockRecommendations(req.Latitude, req.Longitude, req.Limit)
+		mockRecommendations := h.mockService.GenerateRecommendations(req.Latitude, req.Longitude, req.Limit)
 		c.JSON(http.StatusOK, gin.H{
 			"recommendations": mockRecommendations,
 			"count":           len(mockRecommendations),
@@ -138,25 +156,7 @@ func (h *ParkingHandler) ReserveSpace(c *gin.Context) {
 		userID = "demo_user"
 	}
 
-	// Debug: Check if service is nil
-	if h.recommendationService != nil {
-		fmt.Printf("Service is not nil, this is unexpected!\n")
-		return
-	}
-
-	// Create reservation (mock implementation for now)
-	reservation := &entities.ParkingReservation{
-		ID:           fmt.Sprintf("res_%d", time.Now().UnixNano()),
-		UserID:       userID,
-		ParkingLotID: req.ParkingLotID,
-		SpaceID:      req.SpaceID,
-		StartTime:    startTime,
-		EndTime:      endTime,
-		Status:       entities.StatusConfirmed,
-		TotalPrice:   30.0, // Mock price
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	reservation := h.mockService.CreateMockReservation(userID, req.ParkingLotID, req.SpaceID, startTime, endTime)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"reservation": reservation,
@@ -184,18 +184,7 @@ func (h *ParkingHandler) StartParkingSession(c *gin.Context) {
 		userID = "demo_user"
 	}
 
-	// Create parking session (mock implementation for now)
-	session := &entities.ParkingSession{
-		ID:           fmt.Sprintf("session_%d", time.Now().UnixNano()),
-		UserID:       userID,
-		ParkingLotID: req.ParkingLotID,
-		SpaceID:      req.SpaceID,
-		StartTime:    time.Now(),
-		Status:       entities.SessionActive,
-		TotalCost:    0.0, // Will be calculated when session ends
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
+	session := h.mockService.CreateMockSession(userID, req.ParkingLotID, req.SpaceID)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"session": session,
@@ -203,49 +192,107 @@ func (h *ParkingHandler) StartParkingSession(c *gin.Context) {
 	})
 }
 
+// StartAVPTask creates a new autonomous valet parking task.
+func (h *ParkingHandler) StartAVPTask(c *gin.Context) {
+	var req StartAVPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetHeader("x-user-id")
+	if userID == "" {
+		userID = "demo_user"
+	}
+
+	session := &entities.ParkingSession{
+		ID:           fmt.Sprintf("session_%d", time.Now().UnixNano()),
+		UserID:       userID,
+		ParkingLotID: req.ParkingLotID,
+		SpaceID:      req.TargetSpaceID,
+		StartTime:    time.Now(),
+		Status:       entities.SessionActive,
+		TotalCost:    0.0,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if session.SpaceID == "" {
+		session.SpaceID = "avp_allocating"
+	}
+
+	task := h.avpService.StartAutoParkWithSession(
+		session.ID,
+		userID,
+		req.VehicleID,
+		req.ParkingLotID,
+		req.DropoffZone,
+		req.TargetSpaceID,
+	)
+	c.JSON(http.StatusCreated, gin.H{
+		"task":            task,
+		"parking_session": session,
+		"message":         "AVP auto-park task started",
+	})
+}
+
+// SummonAVPTask creates a summon task from parking slot to pickup zone.
+func (h *ParkingHandler) SummonAVPTask(c *gin.Context) {
+	var req SummonAVPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetHeader("x-user-id")
+	if userID == "" {
+		userID = "demo_user"
+	}
+
+	task := h.avpService.StartSummon(userID, req.VehicleID, req.ParkingLotID, req.PickupZone)
+	c.JSON(http.StatusCreated, gin.H{
+		"task":    task,
+		"message": "AVP summon task started",
+	})
+}
+
+// GetAVPTask returns AVP task status and progress.
+func (h *ParkingHandler) GetAVPTask(c *gin.Context) {
+	taskID := c.Param("id")
+	task, ok := h.avpService.GetTask(taskID)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"task": task})
+}
+
+// CancelAVPTask cancels an AVP task and triggers safe-stop semantics.
+func (h *ParkingHandler) CancelAVPTask(c *gin.Context) {
+	taskID := c.Param("id")
+	task, err := h.avpService.CancelTask(taskID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"task":    task,
+		"message": "AVP task cancelled and vehicle moved to minimum risk stop",
+	})
+}
+
 // GetParkingLots returns all parking lots
 func (h *ParkingHandler) GetParkingLots(c *gin.Context) {
-	// This would use the parking lot repository
-	// For now, return mock data
-
 	lats, _ := strconv.ParseFloat(c.Query("lat"), 64)
 	lngs, _ := strconv.ParseFloat(c.Query("lng"), 64)
 
-	mockLots := []*entities.ParkingLot{
-		{
-			ID:              "lot_1",
-			Name:            "CBD Central Parking",
-			Address:         "123 Main Street",
-			Latitude:        22.6913,
-			Longitude:       114.0448,
-			TotalSpaces:     200,
-			AvailableSpaces: 45,
-			PricePerHour:    15.0,
-			Features:        []string{"covered", "24/7", "ev_charging"},
-			Rating:          4.5,
-			IsOpen:          true,
-			LastUpdated:     time.Now(),
-		},
-		{
-			ID:              "lot_2",
-			Name:            "Shopping Mall Parking",
-			Address:         "456 Shopping Ave",
-			Latitude:        22.6950,
-			Longitude:       114.0500,
-			TotalSpaces:     150,
-			AvailableSpaces: 12,
-			PricePerHour:    10.0,
-			Features:        []string{"covered", "security"},
-			Rating:          4.2,
-			IsOpen:          true,
-			LastUpdated:     time.Now(),
-		},
-	}
+	mockLots := h.mockService.MockParkingLots()
 
 	// Calculate distances if location provided
 	if lats != 0 && lngs != 0 {
 		for _, lot := range mockLots {
-			lot.Distance = calculateDistance(lats, lngs, lot.Latitude, lot.Longitude)
+			lot.Distance = services.DistanceKM(lats, lngs, lot.Latitude, lot.Longitude)
 		}
 	}
 
@@ -258,22 +305,7 @@ func (h *ParkingHandler) GetParkingLots(c *gin.Context) {
 // GetParkingLot returns a specific parking lot
 func (h *ParkingHandler) GetParkingLot(c *gin.Context) {
 	lotID := c.Param("id")
-
-	// Mock data - in real implementation, use repository
-	mockLot := &entities.ParkingLot{
-		ID:              lotID,
-		Name:            "CBD Central Parking",
-		Address:         "123 Main Street",
-		Latitude:        22.6913,
-		Longitude:       114.0448,
-		TotalSpaces:     200,
-		AvailableSpaces: 45,
-		PricePerHour:    15.0,
-		Features:        []string{"covered", "24/7", "ev_charging"},
-		Rating:          4.5,
-		IsOpen:          true,
-		LastUpdated:     time.Now(),
-	}
+	mockLot := h.mockService.MockParkingLotByID(lotID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"parking_lot": mockLot,
@@ -283,162 +315,12 @@ func (h *ParkingHandler) GetParkingLot(c *gin.Context) {
 // GetParkingSpaces returns available spaces in a parking lot
 func (h *ParkingHandler) GetParkingSpaces(c *gin.Context) {
 	lotID := c.Param("id")
-
-	// Mock data - in real implementation, use repository
-	mockSpaces := []*entities.ParkingSpace{
-		{
-			ID:           "space_1",
-			ParkingLotID: lotID,
-			SpaceNumber:  "A-101",
-			Type:         entities.SpaceTypeRegular,
-			IsAvailable:  true,
-			IsReserved:   false,
-			Price:        15.0,
-			Floor:        "A",
-			Zone:         "North",
-			LastUpdated:  time.Now(),
-		},
-		{
-			ID:           "space_2",
-			ParkingLotID: lotID,
-			SpaceNumber:  "A-102",
-			Type:         entities.SpaceTypeEV,
-			IsAvailable:  true,
-			IsReserved:   false,
-			Price:        20.0,
-			Floor:        "A",
-			Zone:         "North",
-			LastUpdated:  time.Now(),
-		},
-	}
+	mockSpaces := h.mockService.MockParkingSpacesByLot(lotID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"parking_spaces": mockSpaces,
 		"count":          len(mockSpaces),
 	})
-}
-
-// generateMockRecommendations creates mock parking recommendations for demo
-func generateMockRecommendations(userLat, userLng float64, limit int) []*entities.ParkingRecommendation {
-	mockLots := []*entities.ParkingLot{
-		{
-			ID:              "lot_1",
-			Name:            "CBD Central Parking",
-			Address:         "123 Main Street",
-			Latitude:        userLat + 0.001,
-			Longitude:       userLng + 0.001,
-			TotalSpaces:     200,
-			AvailableSpaces: 45,
-			PricePerHour:    15.0,
-			Features:        []string{"covered", "24/7", "ev_charging"},
-			Rating:          4.5,
-			IsOpen:          true,
-			LastUpdated:     time.Now(),
-		},
-		{
-			ID:              "lot_2",
-			Name:            "Shopping Mall Parking",
-			Address:         "456 Shopping Ave",
-			Latitude:        userLat - 0.001,
-			Longitude:       userLng - 0.001,
-			TotalSpaces:     150,
-			AvailableSpaces: 12,
-			PricePerHour:    10.0,
-			Features:        []string{"covered", "security"},
-			Rating:          4.2,
-			IsOpen:          true,
-			LastUpdated:     time.Now(),
-		},
-		{
-			ID:              "lot_3",
-			Name:            "Airport Parking",
-			Address:         "789 Airport Road",
-			Latitude:        userLat + 0.002,
-			Longitude:       userLng - 0.002,
-			TotalSpaces:     300,
-			AvailableSpaces: 89,
-			PricePerHour:    8.0,
-			Features:        []string{"24/7", "security", "shuttle"},
-			Rating:          4.0,
-			IsOpen:          true,
-			LastUpdated:     time.Now(),
-		},
-	}
-
-	var recommendations []*entities.ParkingRecommendation
-
-	for i, lot := range mockLots {
-		// Calculate distance
-		distance := calculateDistance(userLat, userLng, lot.Latitude, lot.Longitude)
-		lot.Distance = distance
-
-		// Create mock space
-		space := &entities.ParkingSpace{
-			ID:           fmt.Sprintf("space_%d", i+1),
-			ParkingLotID: lot.ID,
-			SpaceNumber:  fmt.Sprintf("A-%03d", i+1),
-			Type:         entities.SpaceTypeRegular,
-			IsAvailable:  true,
-			IsReserved:   false,
-			Price:        lot.PricePerHour,
-			Floor:        "A",
-			Zone:         "North",
-			LastUpdated:  time.Now(),
-		}
-
-		// Create recommendation
-		recommendation := &entities.ParkingRecommendation{
-			ParkingLot:       lot,
-			RecommendedSpace: space,
-			Score:            85.0 - float64(i)*10, // Decreasing scores
-			Reasons: []string{
-				fmt.Sprintf("Only %.1f km away", distance),
-				fmt.Sprintf("¥%.1f/hour", lot.PricePerHour),
-				fmt.Sprintf("%d spaces available", lot.AvailableSpaces),
-			},
-			EstimatedTime: time.Duration(distance*10) * time.Minute,
-			TotalPrice:    lot.PricePerHour * 2.0, // 2 hours estimate
-			Route: &entities.ParkingRoute{
-				Steps: []entities.RouteStep{
-					{
-						Instruction: fmt.Sprintf("Drive %.1f km to %s", distance, lot.Name),
-						Distance:    distance,
-						Duration:    time.Duration(distance*10) * time.Minute,
-						Direction:   "Towards destination",
-					},
-				},
-				TotalDistance: distance,
-				TotalTime:     time.Duration(distance*10) * time.Minute,
-				Instructions:  fmt.Sprintf("Navigate to %s, %s", lot.Name, lot.Address),
-			},
-		}
-
-		recommendations = append(recommendations, recommendation)
-
-		// Limit results
-		if limit > 0 && len(recommendations) >= limit {
-			break
-		}
-	}
-
-	return recommendations
-}
-
-// Helper function
-func calculateDistance(lat1, lng1, lat2, lng2 float64) float64 {
-	// Simple distance calculation (in km)
-	const earthRadius = 6371.0
-
-	dLat := (lat2 - lat1) * 3.14159 / 180.0
-	dLng := (lng2 - lng1) * 3.14159 / 180.0
-
-	a := (dLat/2)*(dLat/2) +
-		(lat1*3.14159/180.0)*(lat2*3.14159/180.0)*
-			(dLng/2)*(dLng/2)
-
-	c := 2 * 3.14159 / 180.0 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-
-	return earthRadius * c
 }
 
 // CityBrainEntryRequest represents vehicle entry request for City Brain API

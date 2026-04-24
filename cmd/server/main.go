@@ -7,7 +7,6 @@ import (
 
 	"smart-outgoing-demo/internal/config"
 	"smart-outgoing-demo/internal/handlers"
-	"smart-outgoing-demo/internal/integration"
 	"smart-outgoing-demo/internal/store"
 	"smart-outgoing-demo/internal/websocket"
 	"smart-outgoing-demo/pkg/server"
@@ -21,14 +20,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-
-	// Initialize DDD service
-	dddService := integration.NewDDDService()
-	err = dddService.Start()
-	if err != nil {
-		log.Fatalf("Failed to start DDD service: %v", err)
-	}
-	defer dddService.Stop()
 
 	vehicleStore := store.NewVehicleStore()
 
@@ -85,6 +76,10 @@ func main() {
 		api.POST("/parking/find", parkingHandler.FindParking)
 		api.POST("/parking/reserve", parkingHandler.ReserveSpace)
 		api.POST("/parking/session/start", parkingHandler.StartParkingSession)
+		api.POST("/parking/avp/start", parkingHandler.StartAVPTask)
+		api.POST("/parking/avp/summon", parkingHandler.SummonAVPTask)
+		api.GET("/parking/avp/tasks/:id", parkingHandler.GetAVPTask)
+		api.POST("/parking/avp/tasks/:id/cancel", parkingHandler.CancelAVPTask)
 		api.GET("/parking/lots", parkingHandler.GetParkingLots)
 		api.GET("/parking/lots/:id", parkingHandler.GetParkingLot)
 		api.GET("/parking/lots/:id/spaces", parkingHandler.GetParkingSpaces)

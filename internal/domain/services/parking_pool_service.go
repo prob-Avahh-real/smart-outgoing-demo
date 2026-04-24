@@ -86,7 +86,7 @@ func (s *ParkingPoolService) ClassifyParkingLot(lot *entities.ParkingLot) entiti
 	// Roadside: >5km or temporary parking, low turnover (<2/hour)
 
 	centerLat, centerLng := 22.6913, 114.0448 // Shenzhen Longhua center
-	distance := calculateDistance(lot.Latitude, lot.Longitude, centerLat, centerLng)
+	distance := DistanceKM(lot.Latitude, lot.Longitude, centerLat, centerLng)
 
 	// Calculate turnover rate (simplified)
 	turnoverRate := s.calculateTurnoverRate(lot)
@@ -169,7 +169,7 @@ func (s *ParkingPoolService) GetRecommendedParkingLot(
 		}, 0)
 
 		for _, lot := range availableLots {
-			distance := calculateDistance(userLat, userLng, lot.Latitude, lot.Longitude)
+			distance := DistanceKM(userLat, userLng, lot.Latitude, lot.Longitude)
 			if maxDistance > 0 && distance > maxDistance {
 				continue
 			}
@@ -200,7 +200,7 @@ func (s *ParkingPoolService) GetRecommendedParkingLot(
 		if len(candidates) > 0 {
 			reason := fmt.Sprintf("推荐%s车场池：距离%.1fkm，可用车位%d个，周转率%.1f/h",
 				pool.Name,
-				calculateDistance(userLat, userLng, candidates[0].lot.Latitude, candidates[0].lot.Longitude),
+				DistanceKM(userLat, userLng, candidates[0].lot.Latitude, candidates[0].lot.Longitude),
 				candidates[0].lot.AvailableSpaces,
 				pool.TurnoverRate)
 			return candidates[0].lot, reason, nil

@@ -55,7 +55,7 @@ func (s *ParkingRecommendationService) FindBestParking(
 
 	for _, lot := range lots {
 		// Calculate distance from user
-		distance := calculateDistance(userLat, userLng, lot.Latitude, lot.Longitude)
+		distance := DistanceKM(userLat, userLng, lot.Latitude, lot.Longitude)
 		lot.Distance = distance
 
 		// Check if lot meets user preferences
@@ -156,7 +156,7 @@ func (s *ParkingRecommendationService) ReserveSpace(
 
 	// Create reservation
 	reservation := &entities.ParkingReservation{
-		ID:           generateReservationID(),
+		ID:           newReservationID(),
 		UserID:       userID,
 		ParkingLotID: lotID,
 		SpaceID:      spaceID,
@@ -209,7 +209,7 @@ func (s *ParkingRecommendationService) StartParkingSession(
 
 	// Create session
 	session := &entities.ParkingSession{
-		ID:           generateSessionID(),
+		ID:           newSessionID(),
 		UserID:       userID,
 		ParkingLotID: lotID,
 		SpaceID:      spaceID,
@@ -474,24 +474,6 @@ func (s *ParkingRecommendationService) generateRouteToLot(
 	}
 }
 
-// Utility functions
-
-func calculateDistance(lat1, lng1, lat2, lng2 float64) float64 {
-	// Haversine formula for calculating distance between two points
-	const earthRadius = 6371 // km
-
-	dLat := (lat2 - lat1) * math.Pi / 180
-	dLng := (lng2 - lng1) * math.Pi / 180
-
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
-			math.Sin(dLng/2)*math.Sin(dLng/2)
-
-	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-
-	return earthRadius * c
-}
-
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {
@@ -499,12 +481,4 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
-}
-
-func generateReservationID() string {
-	return fmt.Sprintf("res_%d", time.Now().UnixNano())
-}
-
-func generateSessionID() string {
-	return fmt.Sprintf("session_%d", time.Now().UnixNano())
 }

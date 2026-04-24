@@ -62,6 +62,7 @@ curl -X POST http://localhost:8080/api/parking/session/start \
 - **Easy Booking**: One-click space reservation
 - **Navigation**: Turn-by-turn directions to parking spots
 - **Session Management**: Track active parking sessions
+- **Underground AVP Ready**: Supports future automated valet parking workflow integration
 
 ### Key Benefits
 - **Time Saving**: Find optimal parking quickly
@@ -128,6 +129,9 @@ ENVIRONMENT=development
 
 # Test specific functionality
 curl -s http://localhost:8080/api/parking/lots | jq '.parking_lots | length'
+
+# Test AVP workflow endpoints
+./scripts/test_avp_apis.sh
 ```
 
 ## Deployment
@@ -191,6 +195,7 @@ curl -v http://localhost:8080/api/parking/lots
 2. **Payment System**: Add payment processing
 3. **User Authentication**: Implement user accounts
 4. **Mobile App**: Develop native mobile applications
+5. **Underground AVP**: Add drop-off/summon APIs, dispatch service, and safety telemetry
 
 ### For Development
 1. **Unit Tests**: Add comprehensive test coverage
@@ -201,9 +206,9 @@ curl -v http://localhost:8080/api/parking/lots
 ## Support
 
 ### Documentation
-- Full documentation: `PARKING_FEATURE.md`
-- API reference: Check endpoint responses
-- Architecture guide: See domain design
+- Canonical parking + AVP quickstart: `README_PARKING.md`
+- Detailed feature/architecture notes: `PARKING_FEATURE.md`
+- Demo walkthrough and runbook: `DEMO_GUIDE.md`
 
 ### Getting Help
 - Check server logs for errors

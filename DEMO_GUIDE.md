@@ -78,6 +78,26 @@ go run cmd/server/main.go
 - 查看RSU路侧单元信息
 - 查看V2X消息记录
 
+### 步骤7：地下停车场 AVP 演示（自动泊车/召回）
+确保服务已启动后，执行：
+
+```bash
+./scripts/test_avp_apis.sh
+```
+
+预期结果：
+- 自动泊车任务创建成功（返回 `task.id`）
+- 返回关联停车会话（`parking_session.id`）
+- 可查询任务状态与进度（`status`、`progress`、`last_checkpoint`）
+- 取消任务后进入安全停车检查点（`minimum_risk_stop`）
+- 召回任务创建成功并可查询状态
+
+可选：使用 Makefile 快速执行
+
+```bash
+make test-avp
+```
+
 ## 功能说明
 
 ### 智慧行车算法
@@ -151,6 +171,8 @@ AMAP_SECURITY_CODE=your_amap_security_code
 
 ## API端点
 
+说明：本节仅保留演示必需接口。完整停车/AVP接口说明以 `README_PARKING.md` 为准。
+
 ### 车辆管理
 - `GET /api/vehicles` - 获取车辆列表
 - `POST /api/vehicles` - 创建车辆
@@ -172,6 +194,12 @@ AMAP_SECURITY_CODE=your_amap_security_code
 - `GET /api/app/url` - 获取应用URL
 - `WS /ws` - WebSocket连接
 
+### AVP（地下停车场自动泊车）
+- `POST /api/parking/avp/start` - 发起自动泊车任务
+- `POST /api/parking/avp/summon` - 发起车辆召回任务
+- `GET /api/parking/avp/tasks/:id` - 查询AVP任务状态
+- `POST /api/parking/avp/tasks/:id/cancel` - 取消任务并触发安全停车
+
 ## 演示场景
 
 ### 场景1：智慧行车
@@ -191,6 +219,12 @@ AMAP_SECURITY_CODE=your_amap_security_code
 2. 点击开始
 3. 观察不同类型车辆的不同行为
 4. 注意轨迹颜色差异
+
+### 场景4：地下停车场 AVP 串测
+1. 运行 `./scripts/test_avp_apis.sh`
+2. 记录首个 `task.id`
+3. 间隔30-90秒重复调用 `GET /api/parking/avp/tasks/:id`
+4. 观察状态从 `dispatching/executing` 向 `completed` 推进
 
 ## 移动端演示
 
