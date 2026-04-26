@@ -1,1 +1,1 @@
-# smart-outgoing-demo
+# smart-outgoing
